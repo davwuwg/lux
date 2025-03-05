@@ -1,28 +1,84 @@
 "use client"
-
 import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Lock, Mail, Loader2 } from "lucide-react"
+import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import Turnstile from "@/components/ui/turnstile"
+import { toast } from "sonner"
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileError, setTurnstileError] = useState<boolean>(false)
+
+  // Detect if we're in development environment to handle local vs domain deployment
+  const isDevelopment = process.env.NODE_ENV === 'development'
+  
+  // Turnstile site key - use environment variable in production
+  const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAA_nlAnnKt5Uo_bH"
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!turnstileToken) {
+      setTurnstileError(true)
+      toast.error("Please complete the security verification")
+      return
+    }
+    
     setIsLoading(true)
-
-    // Simulate authentication delay
-    setTimeout(() => {
+    
+    try {
+      // Verify the Turnstile token with our API endpoint
+      const verificationResponse = await fetch('/api/verify-turnstile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: turnstileToken }),
+      })
+      
+      const verificationResult = await verificationResponse.json()
+      
+      if (!verificationResult.success) {
+        setIsLoading(false)
+        toast.error("Security verification failed. Please try again.")
+        setTurnstileError(true)
+        return
+      }
+      
+      // Proceed with actual login process (replace with your real authentication)
+      // For demonstration, we'll simulate a successful authentication
+      setTimeout(() => {
+        setIsLoading(false)
+        toast.success("Login successful!")
+        router.push("/dashboard")
+      }, 1500)
+    } catch (error) {
       setIsLoading(false)
-      router.push("/dashboard")
-    }, 1500)
+      toast.error("An error occurred during login. Please try again.")
+      console.error("Login error:", error)
+    }
+  }
+
+  const handleTurnstileVerify = (token: string) => {
+    setTurnstileToken(token)
+    setTurnstileError(false)
+  }
+
+  const handleTurnstileError = () => {
+    setTurnstileError(true)
+    setTurnstileToken(null)
+  }
+
+  const handleTurnstileExpire = () => {
+    setTurnstileToken(null)
   }
 
   return (
@@ -42,7 +98,6 @@ export default function LoginPage() {
                 Enter your credentials to access the management suite
               </p>
             </div>
-
             <Card className="w-full border-border/50">
               <CardContent className="pt-6">
                 <form onSubmit={handleLogin} className="space-y-4">
@@ -103,11 +158,34 @@ export default function LoginPage() {
                       </Button>
                     </div>
                   </div>
+                  
+                  {/* Cloudflare Turnstile Component */}
+                  <div className="py-2">
+                    <div className={`flex justify-center ${turnstileError ? 'border border-red-500 rounded-md p-1' : ''}`}>
+                      <Turnstile
+                        sitekey={TURNSTILE_SITE_KEY}
+                        onVerify={handleTurnstileVerify}
+                        onError={handleTurnstileError}
+                        onExpire={handleTurnstileExpire}
+                        theme="auto"
+                        size="normal"
+                        responseFieldName="cf-turnstile-response"
+                        refreshExpired="auto"
+                      />
+                    </div>
+                    {turnstileError && (
+                      <div className="flex items-center mt-2 text-red-500 text-xs">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Please complete the security verification
+                      </div>
+                    )}
+                  </div>
+                  
                   <Button 
                     type="submit" 
                     className={"mt-2 w-full relative transition-all duration-200 " + 
                       (isLoading ? 'bg-primary/90 shadow-lg' : '')}
-                    disabled={isLoading}
+                    disabled={isLoading || !turnstileToken}
                   >
                     <div className="flex items-center justify-center gap-2">
                       {isLoading ? (
@@ -126,7 +204,6 @@ export default function LoginPage() {
                 </form>
               </CardContent>
             </Card>
-
             <div className="text-center text-sm">
               <p className="text-muted-foreground">
                 Secure access for authorized personnel only
