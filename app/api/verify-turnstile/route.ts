@@ -1,61 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const data = await request.json();
-    const { token } = data;
-    
+    const body = await request.json();
+    const { token } = body;
+
     if (!token) {
       return NextResponse.json(
-        { success: false, error: 'Missing token' },
+        { success: false, error: "Missing token" },
         { status: 400 }
       );
     }
 
-    // Get the IP address from Cloudflare or the request
-    const ip = request.headers.get('cf-connecting-ip') || 
-               request.headers.get('x-forwarded-for') || 
-               request.ip;
+    // Get secret key from environment variable
+    const secretKey = process.env.TURNSTILE_SECRET_KEY;
+    
+    if (!secretKey) {
+      console.error("TURNSTILE_SECRET_KEY is not defined");
+      return NextResponse.json(
+        { success: false, error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
 
-    // Environment variable for the secret key (either using TURNSTILE_SECRET_KEY or a fallback for development)
-    const secretKey = process.env.TURNSTILE_SECRET_KEY || '0x4AAAAAAA_nlG7R4LGuHqzKDw0vQthRPxA';
-
-    // Make the verification request to Cloudflare
+    // Make request to Cloudflare Turnstile API
     const formData = new URLSearchParams();
-    formData.append('secret', secretKey);
-    formData.append('response', token);
-    if (ip) formData.append('remoteip', ip);
+    formData.append("secret", secretKey);
+    formData.append("response", token);
+    
+    // Add the IP address if available from headers
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip");
+    if (ip) {
+      formData.append("remoteip", ip);
+    }
 
-    const result = await fetch(
-      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-      {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      }
-    );
+    const url = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+    const result = await fetch(url, {
+      method: "POST",
+      body: formData,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
 
-    // Parse the response and return the result
     const outcome = await result.json();
     
     if (outcome.success) {
-      return NextResponse.json({ success: true, data: outcome });
+      return NextResponse.json({ success: true });
     } else {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Turnstile verification failed', 
-          details: outcome['error-codes'] 
+          error: "Invalid token",
+          details: outcome["error-codes"] 
         },
         { status: 400 }
       );
     }
   } catch (error) {
-    console.error('Error verifying Turnstile token:', error);
+    console.error("Turnstile verification error:", error);
     return NextResponse.json(
-      { success: false, error: 'Server error during verification' },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

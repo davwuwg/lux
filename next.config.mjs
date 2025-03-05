@@ -14,7 +14,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: [],
     remotePatterns: [
       {
         protocol: 'https',
@@ -22,23 +21,34 @@ const nextConfig = {
       },
     ],
   },
+  // Disable heavy optimizations that cause performance issues
   experimental: {
-    webpackBuildWorker: true,
-    parallelServerBuildTraces: true,
-    parallelServerCompiles: true,
-    optimizeCss: true,
+    webpackBuildWorker: false, // Disable worker to reduce memory usage
+    optimizeCss: false, // Disable CSS optimization which might cause freezes
     serverComponentsExternalPackages: [],
+    largePageDataBytes: 128 * 1000, // Reduce page data transfer size
   },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
-  reactStrictMode: true,
+  // Performance improvements
+  reactStrictMode: false, // Disable strict mode to reduce double-rendering
   swcMinify: true,
   output: 'standalone',
   poweredByHeader: false,
-  env: {
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://yourtestdomain.com'
-  }
+  webpack: (config) => {
+    // Avoid Node.js polyfills for browser-only code
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      module: false,
+      path: false,
+      os: false,
+      crypto: false,
+      punycode: false, // Avoid the deprecated punycode module
+    };
+    return config;
+  },
 }
 
 mergeConfig(nextConfig, userConfig)

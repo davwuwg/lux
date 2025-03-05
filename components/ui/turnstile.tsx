@@ -1,108 +1,76 @@
-"use client";
+"use client"
 
-import { useEffect, useRef, useState } from "react";
-import Script from "next/script";
+import { useEffect, useRef, useState } from "react"
 
-// Define prop types for the Turnstile component
 interface TurnstileProps {
-  sitekey: string;
-  onVerify?: (token: string) => void;
-  onError?: (error: any) => void;
-  onExpire?: () => void;
-  action?: string;
-  cData?: string;
-  theme?: "light" | "dark" | "auto";
-  size?: "normal" | "compact" | "flexible";
-  responseFieldName?: string;
-  refreshExpired?: "auto" | "manual" | "never";
-  containerId?: string;
-  className?: string;
+  siteKey: string
+  onVerify: (token: string) => void
+  theme?: "light" | "dark" | "auto"
+  size?: "normal" | "compact"
+  className?: string
 }
 
-export const Turnstile = ({
-  sitekey,
+export function Turnstile({
+  siteKey,
   onVerify,
-  onError,
-  onExpire,
-  action,
-  cData,
   theme = "auto",
   size = "normal",
-  responseFieldName = "cf-turnstile-response",
-  refreshExpired = "auto",
-  containerId,
-  className,
-}: TurnstileProps) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [widgetId, setWidgetId] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const uniqueId = containerId || `cf-turnstile-${Math.random().toString(36).substring(2, 11)}`;
+  className = "",
+}: TurnstileProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [widgetId, setWidgetId] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    // Don't initialize until the script is loaded
-    if (!isLoaded || !window.turnstile) return;
-
-    // Reset any existing widget
-    if (widgetId) {
-      window.turnstile.remove(widgetId);
-    }
-
-    // Initialize widget once the script is loaded
-    const id = window.turnstile.render(`#${uniqueId}`, {
-      sitekey,
-      callback: (token: string) => {
-        if (onVerify) onVerify(token);
-      },
-      "error-callback": (error: any) => {
-        if (onError) onError(error);
-      },
-      "expired-callback": () => {
-        if (onExpire) onExpire();
-      },
-      theme,
-      size,
-      "response-field-name": responseFieldName,
-      "refresh-expired": refreshExpired,
-      ...(action && { action }),
-      ...(cData && { cData }),
-    });
-
-    setWidgetId(id);
-
-    // Cleanup
-    return () => {
-      if (id && window.turnstile) {
-        window.turnstile.remove(id);
+    // Load the Turnstile script if not already loaded
+    if (!loaded) {
+      const script = document.createElement("script")
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+      script.async = true
+      script.defer = true
+      
+      script.onload = () => {
+        setLoaded(true)
       }
-    };
-  }, [isLoaded, sitekey, theme, size, action, cData, responseFieldName, refreshExpired, onVerify, onError, onExpire, uniqueId]);
+      
+      document.body.appendChild(script)
+      
+      return () => {
+        document.body.removeChild(script)
+      }
+    }
+    
+    // Render Turnstile widget when script is loaded
+    if (loaded && containerRef.current && window.turnstile) {
+      const id = window.turnstile.render(containerRef.current, {
+        sitekey: siteKey,
+        callback: (token: string) => {
+          onVerify(token)
+        },
+        theme: theme,
+        size: size,
+      })
+      
+      setWidgetId(id)
+      
+      return () => {
+        if (widgetId) {
+          window.turnstile.remove(widgetId)
+        }
+      }
+    }
+  }, [siteKey, onVerify, theme, size, loaded])
 
-  return (
-    <>
-      <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-        onLoad={() => setIsLoaded(true)}
-        strategy="afterInteractive"
-      />
-      <div id={uniqueId} ref={containerRef} className={className} />
-    </>
-  );
-};
+  return <div ref={containerRef} className={className} />
+}
 
-// Add type declarations for the Turnstile global object
+// Extend the global Window interface to include Turnstile
 declare global {
   interface Window {
     turnstile: {
-      render: (
-        container: string | HTMLElement,
-        params: any
-      ) => string;
-      reset: (widgetId: string) => void;
-      remove: (widgetId: string) => void;
-      getResponse: (widgetId?: string) => string | undefined;
-      isExpired: (widgetId?: string) => boolean;
-    };
+      render: (container: HTMLElement, options: any) => string
+      reset: (widgetId: string) => void
+      remove: (widgetId: string) => void
+    }
   }
 }
-
-export default Turnstile;
